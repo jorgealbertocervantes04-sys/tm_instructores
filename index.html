@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sistema Maestro TM | Simulador Forense y Auditoría</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { tm: { dark: '#050B14', slate: '#0F172A', cyan: '#00E5FF', lime: '#39FF14', red: '#FF3333', amber: '#FFB800', orange: '#FF5500' } },
+                    fontFamily: { display: ['Orbitron', 'sans-serif'], body: ['Inter', 'sans-serif'] },
+                    boxShadow: { 'neon-cyan': '0 0 20px rgba(0, 229, 255, 0.4)', 'neon-red': '0 0 20px rgba(255, 51, 51, 0.4)', 'neon-lime': '0 0 20px rgba(57, 255, 20, 0.4)', 'neon-orange': '0 0 20px rgba(255, 85, 0, 0.4)', 'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)' }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        :root { --bg-color: #050B14; }
+        body { background-color: var(--bg-color); color: #F8FAFC; overflow: hidden; font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
+        
+        /* --- ESTILOS GLOBALES (GLASSMORPHISM) --- */
+        .glass-panel { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); border-radius: 1.5rem; transition: all 0.3s ease; }
+        .interactive-btn { background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255,255,255,0.1); transition: all 0.2s ease; cursor: pointer; border-radius: 1rem; }
+        .interactive-btn:hover { background: rgba(30, 41, 59, 0.8); transform: translateY(-2px); }
+        .interactive-btn:disabled { opacity: 0.5; pointer-events: none; filter: grayscale(1); }
+        .interactive-reveal { cursor: pointer; position: relative; }
+        .interactive-reveal .hidden-content { opacity: 0; max-height: 0; overflow: hidden; transition: all 0.5s ease; transform: translateY(10px); }
+        .interactive-reveal.revealed .hidden-content { opacity: 1; max-height: 800px; transform: translateY(0); margin-top: 1rem; }
+        .interactive-reveal.revealed .click-hint { display: none; }
+        
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); } ::-webkit-scrollbar-thumb { background: #00E5FF; border-radius: 10px; }
+
+        /* --- PANTALLA DE SELECCIÓN DE MODO --- */
+        #mode-selector { position: fixed; inset: 0; background: radial-gradient(circle at 50% 50%, #0F172A 0%, #050B14 100%); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        
+        /* --- MODO PRESENTACIÓN MAESTRA --- */
+        #master-mode { display: none; width: 100vw; height: 100vh; position: relative; }
+        .cyber-bg { position: fixed; inset: 0; background: radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.7) 0%, rgba(5, 11, 20, 1) 100%); z-index: -3; }
+        .grid-lines { position: fixed; inset: -50%; width: 200vw; height: 200vh; background-image: linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px); background-size: 60px 60px; transform: rotateX(60deg) translateY(0); animation: gridMove 30s linear infinite; z-index: -2; }
+        @keyframes gridMove { 0% { transform: rotateX(60deg) translateY(0); } 100% { transform: rotateX(60deg) translateY(60px); } }
+        #canvas-container { position: fixed; inset: 0; z-index: -5; pointer-events: none; }
+        .scene-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; z-index: 10; }
+        .slide-module { position: absolute; inset: 0; padding: 4rem 3rem; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transform: scale(0.95); transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1); overflow-y: auto; overflow-x: hidden; }
+        .slide-module.active { opacity: 1; pointer-events: auto !important; transform: scale(1); z-index: 20; }
+        .slide-module.prev { transform: scale(1.05); opacity: 0; }
+        
+        /* HUD y Controles Maestro */
+        .hud-base { position: fixed; z-index: 1000; display: flex; flex-col items-start gap: 0.5rem; background: rgba(5, 11, 20, 0.85); backdrop-filter: blur(12px); padding: 1rem 1.5rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 20px rgba(0,0,0,0.4); transition: 0.3s; opacity: 0; pointer-events: none; transform: translateY(-20px); }
+        .hud-base.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        #hud-container-right { top: 1.5rem; right: 2rem; border-color: rgba(0, 229, 255, 0.3); }
+        #hud-container-left { top: 1.5rem; left: 2rem; border-color: rgba(255, 51, 51, 0.3); }
+        
+        .hud-label { font-family: 'Inter', sans-serif; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.1em; }
+        .hud-number { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 900; }
+        
+        #progress-bar { position: fixed; bottom: 0; left: 0; height: 5px; background: #00E5FF; width: 0%; transition: 0.4s ease; z-index: 9999; box-shadow: 0 0 10px #00E5FF; }
+        #bottom-bar-wrapper { position: fixed; bottom: 1.5rem; right: 2rem; z-index: 9998; }
+        #slide-controls { display: flex; align-items: center; gap: 1rem; background: rgba(5, 11, 20, 0.9); border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.5rem 1rem; border-radius: 2rem; }
+        .nav-btn { color: #00E5FF; font-size: 1.2rem; cursor: pointer; background: none; border: none; transition: 0.2s; }
+        .nav-btn:hover { color: #FFF; transform: scale(1.2); text-shadow: 0 0 10px #00E5FF; }
+        .screen-shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake { 10%, 90% { transform: translate3d(-10px, 0, 0); } 20%, 80% { transform: translate3d(10px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-15px, 0, 0); } 40%, 60% { transform: translate3d(15px, 0, 0); } }
+
+        /* Panel Forense Docente (Oculto, tecla T) */
+        #teacher-dashboard { position: fixed; top: 0; left: -400px; width: 380px; height: 100vh; background: rgba(2, 6, 23, 0.95); backdrop-filter: blur(20px); border-right: 1px solid #00E5FF; z-index: 99999; transition: left 0.4s ease; padding: 2rem 1.5rem; overflow-y: auto; box-shadow: 20px 0 50px rgba(0,0,0,0.8); }
+        #teacher-dashboard.open { left: 0; }
+        .student-card { background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; position: relative; overflow: hidden; }
+        .student-card.risk { border-color: #FF3333; box-shadow: inset 0 0 20px rgba(255,51,51,0.2); }
+        .student-card .risk-bar { position: absolute; bottom: 0; left: 0; height: 3px; background: #FF3333; width: 0%; transition: 0.3s; }
+
+        /* Overlays Interactivos en Pantalla Maestra */
+        .master-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 99998; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: 0.4s; backdrop-filter: blur(10px); }
+        .master-overlay.show { opacity: 1; pointer-events: auto; }
+        .floating-alert { position: absolute; font-family: 'Orbitron'; font-size: 2.5rem; font-weight: 800; animation: floatUp 2.5s forwards; z-index: 2001; text-shadow: 0 0 20px currentColor; }
+        @keyframes floatUp { 0% { opacity: 0; transform: translateY(20px) scale(0.8); } 20% { opacity: 1; transform: translateY(0) scale(1.2); } 100% { opacity: 0; transform: translateY(-100px) scale(1); } }
+
+        /* Camión 3D SVG Tracker */
+        #roadmap-layer { position: fixed; inset: 0; z-index: 5; pointer-events: none; opacity: 0; transition: 1s; }
+        #roadmap-layer.visible { opacity: 1; }
+        #truck-avatar { position: fixed; top: -500px; left: -500px; width: 220px; height: 220px; margin-left: -110px; margin-top: -110px; z-index: 15; transition: left 1s ease-out, top 1s ease-out; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; pointer-events: none; }
+        #truck-avatar.visible { opacity: 1; }
+        #mini-truck-canvas { width: 100%; height: 100%; filter: drop-shadow(0 20px 30px rgba(0,0,0,0.9)); }
+        
+        .video-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1; opacity: 0.5; }
+        .danger-panel { border-top: 4px solid #FF3333; box-shadow: 0 10px 40px rgba(255, 51, 51, 0.1); }
+        .cyan-panel { border-top: 4px solid #00E5FF; } .lime-panel { border-top: 4px solid #39FF14; } .amber-panel { border-top: 4px solid #FFB800; }
+
+        /* --- MODO APP PARTICIPANTE (Móvil) --- */
+        #app-mode { display: none; width: 100vw; height: 100vh; flex-direction: column; background: #020617; position: relative; z-index: 999999; }
+        .app-view { display: none; flex: 1; overflow-y: auto; padding: 1.5rem; padding-bottom: 6rem; animation: slideUp 0.3s forwards; }
+        .app-view.active { display: block; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .nav-bar { position: fixed; bottom: 0; width: 100%; background: rgba(2, 6, 23, 0.95); border-top: 1px solid #1E293B; display: flex; justify-content: space-around; padding: 1rem 0; z-index: 50; backdrop-filter: blur(10px); }
+        .nav-btn-app { display: flex; flex-direction: column; align-items: center; color: #475569; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; width: 33%; cursor: pointer; transition: 0.3s; }
+        .nav-btn-app.active { color: #00E5FF; text-shadow: 0 0 15px rgba(0,229,255,0.8); transform: translateY(-3px); }
+        .nav-btn-app i { font-size: 1.4rem; margin-bottom: 4px; }
+        .input-tm { width: 100%; background: #0F172A; border: 1px solid #334155; padding: 1rem; border-radius: 0.5rem; color: #00E5FF; font-family: 'Inter'; font-weight: 600; outline: none; margin-top: 0.5rem; margin-bottom: 1rem; transition: 0.3s; }
+        .input-tm:focus { border-color: #00E5FF; box-shadow: 0 0 15px rgba(0,229,255,0.3); }
+        .toast { position: fixed; top: -100px; left: 50%; transform: translateX(-50%); background: rgba(57, 255, 20, 0.2); border: 1px solid #39FF14; color: #39FF14; padding: 10px 20px; border-radius: 30px; font-family: 'Orbitron'; font-weight: bold; font-size: 0.8rem; z-index: 9999; transition: top 0.4s ease; box-shadow: 0 0 15px rgba(57,255,20,0.4); white-space: nowrap; }
+        .toast.show { top: 20px; }
+        .app-glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1.2rem; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5); }
+    </style>
+</head>
+<body>
+
+    <!-- ==========================================
+         SELECTOR DE MODO (INICIO)
+    =========================================== -->
+    <div id="mode-selector">
+        <i class="fa-solid fa-microchip text-[6rem] text-tm-cyan animate-pulse mb-8 drop-shadow-[0_0_30px_rgba(0,229,255,0.6)]"></i>
+        <h1 class="font-display text-5xl font-black text-white uppercase tracking-widest mb-12 text-center">Sistema Maestro TM</h1>
+        
+        <div class="flex flex-col md:flex-row gap-8 w-full max-w-4xl px-6">
+            <button onclick="initMode('master')" class="flex-1 glass-panel p-10 flex flex-col items-center hover:border-tm-cyan transition-all hover:scale-105 group">
+                <i class="fa-solid fa-chalkboard-user text-6xl text-slate-400 group-hover:text-tm-cyan mb-6 transition-colors"></i>
+                <h2 class="font-display text-3xl font-bold text-white mb-2 uppercase">Pantalla Maestra</h2>
+                <p class="text-slate-400 font-light text-center">Proyector Principal. Requiere resolución HD.</p>
+            </button>
+            
+            <button onclick="initMode('app')" class="flex-1 glass-panel p-10 flex flex-col items-center hover:border-tm-lime transition-all hover:scale-105 group">
+                <i class="fa-solid fa-mobile-screen-button text-6xl text-slate-400 group-hover:text-tm-lime mb-6 transition-colors"></i>
+                <h2 class="font-display text-3xl font-bold text-white mb-2 uppercase">App Instructor</h2>
+                <p class="text-slate-400 font-light text-center">Terminal móvil interactiva para participantes.</p>
+            </button>
+        </div>
+    </div>
+
+
+    <!-- ==========================================
+         MODO 1: APP MÓVIL DEL PARTICIPANTE
+    =========================================== -->
+    <div id="app-mode">
+        <header class="p-4 border-b border-cyan-900/50 bg-black flex justify-between items-center z-50 shadow-lg">
+            <div class="flex items-center gap-3"><i class="fa-solid fa-satellite-dish text-tm-cyan animate-pulse text-xl"></i><span class="font-display font-bold text-sm tracking-widest">ENLACE TÁCTICO</span></div>
+            <div id="app-status" class="text-xs text-tm-red font-mono border border-tm-red px-2 py-1 rounded shadow-[0_0_10px_rgba(255,51,51,0.5)]">OFFLINE</div>
+        </header>
+
+        <div id="toast" class="toast"><i class="fa-solid fa-check-double mr-2"></i> ENVIADO</div>
+
+        <!-- APP VISTA: LOGIN -->
+        <div id="view-login" class="app-view active flex flex-col justify-center items-center text-center h-full">
+            <div class="app-glass p-8 w-full max-w-sm">
+                <i class="fa-solid fa-fingerprint text-6xl text-tm-cyan mb-6 drop-shadow-[0_0_15px_rgba(0,229,255,0.5)]"></i>
+                <h1 class="font-display text-2xl font-bold uppercase mb-2 text-white">Identificación</h1>
+                <p class="text-xs text-slate-400 mb-8 font-light">Sincroniza tu dispositivo con la red maestra.</p>
+                <input type="text" id="instructor-name" class="input-tm text-center text-xl" placeholder="TU NOMBRE">
+                <button onclick="appConectar()" class="w-full bg-tm-cyan text-black font-display font-bold py-4 rounded-lg uppercase tracking-widest shadow-[0_0_20px_rgba(0,229,255,0.4)] active:scale-95 transition-transform">Sincronizar</button>
+            </div>
+        </div>
+
+        <!-- APP VISTA: INTERACCIÓN EN VIVO (QUIZZES Y REFLEXIONES) -->
+        <div id="view-live" class="app-view">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="font-display text-2xl font-bold uppercase text-tm-cyan">Módulo Interactivo</h2>
+                <div class="bg-slate-800 px-3 py-1 rounded border border-slate-600 font-mono text-tm-lime font-bold text-sm"><span id="user-score">0</span> XP</div>
+            </div>
+            
+            <div id="waiting-screen" class="app-glass p-10 text-center flex flex-col items-center justify-center mt-10">
+                <div class="w-16 h-16 border-4 border-tm-cyan border-t-transparent rounded-full animate-spin mb-6"></div>
+                <h3 class="font-display text-xl font-bold text-white mb-2">Escaneando Red</h3>
+                <p class="text-sm text-slate-400">Atento a la pantalla maestra. Las preguntas y dinámicas aparecerán aquí.</p>
+            </div>
+
+            <div id="interaction-screen" class="hidden">
+                <div class="app-glass p-6 mb-6 border-t-4 border-tm-orange">
+                    <span class="text-tm-orange font-bold text-xs uppercase tracking-widest mb-2 block" id="interaction-type"><i class="fa-solid fa-bolt mr-2"></i> Evaluación Operativa</span>
+                    <h3 id="interaction-question" class="text-lg font-bold text-white leading-snug">¿Pregunta?</h3>
+                </div>
+                
+                <!-- Contenedor Dinámico: Botones o Textarea -->
+                <div id="interaction-content" class="space-y-4"></div>
+                <div id="interaction-feedback" class="hidden mt-4 p-4 rounded bg-slate-800 border text-sm font-bold text-center"></div>
+            </div>
+        </div>
+
+        <!-- APP VISTA: CREADOR DE AUDITORÍA 60 PUNTOS -->
+        <div id="view-audit" class="app-view">
+            <div class="flex justify-between items-end mb-6">
+                <div>
+                    <h2 class="font-display text-2xl font-bold uppercase text-tm-red">Constructor</h2>
+                    <p class="text-xs text-slate-400">Matriz de Auditoría (60 Puntos)</p>
+                </div>
+                <button onclick="appEnviarAuditoria()" class="bg-tm-red text-white px-4 py-3 rounded-lg text-xs font-display font-bold uppercase tracking-widest shadow-[0_0_15px_rgba(255,51,51,0.6)] animate-pulse">Dictaminar</button>
+            </div>
+
+            <div class="app-glass p-5 mb-6 border border-tm-red/50">
+                <label class="text-xs font-bold text-slate-300">Riesgo / Desvío Operativo</label>
+                <input type="text" id="risk-name" class="input-tm text-sm" placeholder="Ej. Bajar pendientes en neutral">
+                
+                <label class="text-xs font-bold text-slate-300">Justificación (Impacto Real)</label>
+                <textarea id="risk-justification" rows="2" class="input-tm text-sm" placeholder="Ej. Cristalización de balatas, unidad sin frenos."></textarea>
+                
+                <label class="text-xs font-bold text-slate-300 mb-2 block">Nivel de Gravedad</label>
+                <div class="flex gap-2 mb-4">
+                    <button onclick="appSetRiskLvl('Crítico', this)" class="risk-btn flex-1 bg-slate-800 text-tm-red border border-tm-red/30 rounded py-3 text-xs font-bold uppercase">Crítico</button>
+                    <button onclick="appSetRiskLvl('Medio', this)" class="risk-btn flex-1 bg-slate-800 text-tm-amber border border-tm-amber/30 rounded py-3 text-xs font-bold uppercase">Medio</button>
+                    <button onclick="appSetRiskLvl('Bajo', this)" class="risk-btn flex-1 bg-slate-800 text-tm-lime border border-tm-lime/30 rounded py-3 text-xs font-bold uppercase">Bajo</button>
+                </div>
+                <button onclick="appAgregarRiesgo()" class="w-full bg-slate-700 text-white font-bold py-3 rounded uppercase text-xs tracking-widest active:scale-95 transition-transform"><i class="fa-solid fa-plus mr-2"></i> Añadir (<span id="audit-count">0</span>/60)</button>
+            </div>
+            <div id="risk-list" class="space-y-3"></div>
+        </div>
+
+        <nav class="nav-bar hidden" id="app-nav">
+            <div class="nav-btn-app active" onclick="appSwitchView('view-live', this)"><i class="fa-solid fa-satellite-dish"></i><span>En Vivo</span></div>
+            <div class="nav-btn-app" onclick="appSwitchView('view-audit', this)"><i class="fa-solid fa-list-check"></i><span>Auditoría</span></div>
+        </nav>
+    </div>
+
+
+    <!-- ==========================================
+         MODO 2: PANTALLA MAESTRA DE PRESENTACIÓN
+    =========================================== -->
+    <div id="master-mode">
+        
+        <div id="canvas-container"></div>
+        <div class="cyber-bg"></div>
+        <div class="grid-lines"></div>
+
+        <!-- HUDS -->
+        <!-- Presupuesto Ruta (Oculto inicio, se muestra en viaje) -->
+        <div id="hud-container-right" class="hud-base">
+            <div class="hud-label text-tm-cyan">Presupuesto Ruta</div>
+            <div id="global-budget" class="hud-number text-tm-cyan">$80,000</div>
+        </div>
+
+        <!-- Impacto Mala Instrucción (Oculto inicio, se muestra si hay errores) -->
+        <div id="hud-container-left" class="hud-base">
+            <div class="hud-label text-tm-red">Costo de Mala Instrucción</div>
+            <div id="instructor-cost" class="hud-number text-tm-red">-$0</div>
+        </div>
+
+        <!-- PANEL DOCENTE OCULTO (Tecla 'T') -->
+        <div id="teacher-dashboard">
+            <h2 class="font-display text-tm-cyan text-xl font-bold uppercase tracking-widest border-b border-tm-cyan/50 pb-2 mb-6"><i class="fa-solid fa-server mr-2"></i> Telemetría Docente</h2>
+            <p class="text-xs text-slate-400 mb-6">Métricas en tiempo real. Si un alumno responde mal, se deduce del costo de instrucción de la empresa. <br><br>[T] para cerrar.</p>
+            <div id="students-list">
+                <p class="text-slate-600 text-sm italic" id="empty-students">Esperando conexiones...</p>
+            </div>
+        </div>
+
+        <!-- Controles Inferiores -->
+        <div id="progress-bar"></div>
+        <div id="bottom-bar-wrapper">
+            <div id="slide-controls">
+                <button onclick="prevSlide()" class="nav-btn"><i class="fa-solid fa-chevron-left"></i></button>
+                <div id="slide-counter" class="text-slate-300 font-mono text-sm font-bold">1 / 45</div>
+                <button onclick="nextSlide()" class="nav-btn"><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+        </div>
+
+        <!-- Camión 3D Vectorial Map -->
+        <div id="roadmap-layer">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="w-full h-full opacity-50">
+                <path id="road-bg" d="M 5 85 C 30 105, 70 105, 90 85 C 105 60, 95 30, 85 15 C 60 -5, 30 0, 15 25 C -5 50, 0 80, 20 90 C 50 100, 80 80, 85 60 C 90 40, 70 20, 50 40" fill="none" stroke="#334155" stroke-width="0.3" stroke-dasharray="1 1"/>
+                <path id="road-active" d="M 5 85 C 30 105, 70 105, 90 85 C 105 60, 95 30, 85 15 C 60 -5, 30 0, 15 25 C -5 50, 0 80, 20 90 C 50 100, 80 80, 85 60 C 90 40, 70 20, 50 40" fill="none" stroke="#FF5500" stroke-width="0.4" style="transition: stroke-dashoffset 1s linear;" />
+            </svg>
+        </div>
+        <div id="truck-avatar">
+            <div id="mini-truck-canvas"></div>
+        </div>
+
+        <!-- OVERLAY: AUDITORÍA RECIBIDA DESDE APP -->
+        <div id="eval-overlay" class="master-overlay">
+            <button onclick="document.getElementById('eval-overlay').classList.remove('show')" class="absolute top-10 right-10 text-white text-5xl hover:text-tm-red transition-colors"><i class="fa-solid fa-xmark"></i></button>
+            <div class="max-w-6xl w-full text-center">
+                <h2 class="font-display text-6xl font-bold uppercase text-white drop-shadow-xl mb-6">Auditoría 60 Puntos</h2>
+                <p id="eval-author" class="text-2xl text-tm-red font-mono tracking-widest mb-12">Dictamen de: ---</p>
+                <div class="grid grid-cols-3 gap-8">
+                    <div class="glass-panel p-12 border-t-4 border-tm-red"><h3 class="text-2xl font-bold text-white mb-6">Riesgos Críticos</h3><div id="eval-criticos" class="text-[6rem] font-display font-black text-tm-red">0</div></div>
+                    <div class="glass-panel p-12 border-t-4 border-tm-amber"><h3 class="text-2xl font-bold text-white mb-6">Riesgos Medios</h3><div id="eval-medios" class="text-[6rem] font-display font-black text-tm-amber">0</div></div>
+                    <div class="glass-panel p-12 border-t-4 border-tm-lime"><h3 class="text-2xl font-bold text-white mb-6">Riesgos Bajos</h3><div id="eval-ok" class="text-[6rem] font-display font-black text-tm-lime">0</div></div>
+                </div>
+                <p class="mt-12 text-slate-400 font-light text-2xl">Matriz guardada para su validación práctica en patio de maniobras.</p>
+            </div>
+        </div>
+
+        <!-- OVERLAY: REFLEXIÓN ABIERTA RECIBIDA -->
+        <div id="reflection-overlay" class="master-overlay">
+            <button onclick="document.getElementById('reflection-overlay').classList.remove('show')" class="absolute top-10 right-10 text-white text-5xl hover:text-tm-red transition-colors"><i class="fa-solid fa-xmark"></i></button>
+            <div class="max-w-5xl w-full text-center">
+                <i class="fa-solid fa-quote-left text-6xl text-tm-cyan mb-8 opacity-50"></i>
+                <h2 class="font-display text-4xl font-bold uppercase text-white mb-8">Aporte del Escuadrón</h2>
+                <div class="glass-panel p-12 border-l-8 border-tm-cyan text-left">
+                    <p id="ref-text" class="text-3xl text-white font-light leading-relaxed italic">"..."</p>
+                    <p id="ref-author" class="text-xl text-tm-cyan font-bold mt-8 uppercase tracking-widest">- ---</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDES DE LA PRESENTACIÓN -->
+        <main class="scene-container" id="presentation">
+            
+            <!-- 1. PORTADA -->
+            <section class="slide-module active p-0">
+                <div class="relative z-10 w-full h-full flex flex-col justify-center pl-[10%] pr-[30%] bg-black/40">
+                    <p class="text-tm-cyan tracking-[0.3em] font-bold text-sm uppercase mb-4 animate-pulse"><i class="fa-solid fa-shield-halved mr-2"></i> Formación Operativa Avanzada</p>
+                    <h1 class="font-display text-6xl md:text-[5rem] font-black tracking-tight mb-6 text-white uppercase leading-tight">
+                        Instructores<br>
+                        <span class="text-tm-orange drop-shadow-[0_0_20px_rgba(255,102,0,0.8)]">Estratégicos</span>
+                    </h1>
+                    <p class="text-2xl text-slate-300 font-light max-w-2xl border-l-4 border-tm-orange pl-6 mb-12">
+                        De capacitadores tradicionales a arquitectos de la seguridad corporativa.
+                    </p>
+                    <div><button onclick="nextSlide()" class="bg-tm-orange text-black font-display font-bold text-xl py-4 px-10 rounded-full uppercase tracking-widest transition-all shadow-neon-orange hover:bg-white">Iniciar Sistema</button></div>
+                </div>
+            </section>
+
+            <!-- 2. LA LLAMADA (VIDEO) -->
+            <section class="slide-module p-0">
+                <div class="w-full h-full bg-black flex flex-col items-center justify-center relative">
+                    <div class="absolute top-8 left-8 text-tm-red font-mono text-xl font-bold z-20 bg-black/60 px-6 py-2 rounded-lg border border-tm-red animate-pulse">REPORTE CRÍTICO 3:00 AM</div>
+                    <video src="llamada.mp4" class="w-full h-full object-contain" controls></video>
+                </div>
+            </section>
+
+            <!-- 3. EVENTO CRÍTICO (INTERACCIÓN 1) -->
+            <section class="slide-module" data-type="poll" data-poll="La unidad fue pérdida total. El operador había sido validado por nosotros hace 15 días. ¿Cuál crees que fue la falla raíz?" data-options="Falla Mecánica Imprevisible|0,Exceso de Confianza del Operador|0,Validación Flexible en el Entrenamiento|100">
+                <div class="holo-panel danger-panel max-w-[85rem] text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white"><i class="fa-solid fa-truck-burst text-tm-red mr-4"></i> El Evento Crítico</h2>
+                    <p class="text-2xl text-slate-300 mb-10 font-light max-w-4xl mx-auto">
+                        Abran su App Móvil. <strong class="text-tm-cyan">Voten: ¿Cuál fue la verdadera causa?</strong>
+                    </p>
+                    <div class="bg-black/60 p-10 rounded-2xl border border-white/10 mt-10">
+                        <p class="text-tm-amber uppercase tracking-widest font-bold mb-6">Telemetría de Votación (En Vivo)</p>
+                        <div id="chart-slide-3" class="text-3xl font-mono text-tm-cyan font-bold animate-pulse">Esperando respuestas del escuadrón...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. ANÁLISIS FORENSE -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">¿Dónde fue el error?</h2>
+                    <p class="text-xl text-slate-300 font-light">Vamos a retroceder en el tiempo. Rastrearemos la instrucción desde el patio hasta la ruta.</p>
+                </div>
+            </section>
+
+            <!-- 5. INVESTIGACIÓN DE SINIESTRO (INTERACCIÓN 2) -->
+            <section class="slide-module" data-type="reflection" data-poll="En un peritaje de accidente, como instructor, ¿qué es lo primero que auditas del historial del operador?">
+                <div class="max-w-6xl w-full text-center">
+                    <p class="text-tm-red tracking-[0.2em] font-bold text-sm uppercase mb-2">Protocolo Forense</p>
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">Investigación del Siniestro</h2>
+                    <p class="text-xl text-slate-300 mb-10 max-w-4xl mx-auto font-light">Analizaremos la telemetría, el estado del tráiler y los factores humanos. <strong class="text-tm-cyan">Responde la pregunta abierta en tu App.</strong></p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-left mt-12">
+                        <div class="glass-panel p-8 border-l-4 border-tm-cyan"><h3 class="font-bold text-white text-xl">Historial Instrucción</h3></div>
+                        <div class="glass-panel p-8 border-l-4 border-tm-amber"><h3 class="font-bold text-white text-xl">Inspección Unidad</h3></div>
+                        <div class="glass-panel p-8 border-l-4 border-tm-red"><h3 class="font-bold text-white text-xl">Factores Humanos</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 6. EFECTO DOMINÓ (INTERACCIÓN 3) -->
+            <section class="slide-module" data-type="poll" data-poll="¿Qué costo oculto crees que destruye más rápido la rentabilidad de la empresa?" data-options="Daños Físicos a la Unidad|50,Sanciones y Multas Federales|50,Cultura Vial Agresiva (Efecto Cascada)|100">
+                <div class="max-w-6xl w-full text-center">
+                    <p class="text-tm-red tracking-[0.2em] font-bold text-sm uppercase mb-2">Reacción en Cadena</p>
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">Efecto Dominó</h2>
+                    <p class="text-lg text-slate-300 mb-10 max-w-4xl mx-auto font-light">Una omisión instruccional detona costos incosteables. <strong class="text-tm-cyan">Voten en su App.</strong></p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left mt-8">
+                        <div class="glass-panel p-8 border-t-4 border-tm-red"><i class="fa-solid fa-users-slash text-4xl text-tm-red mb-4"></i><h3 class="font-bold text-white text-xl">Cultura Vial Agresiva</h3></div>
+                        <div class="glass-panel p-8 border-t-4 border-tm-red"><i class="fa-solid fa-truck-burst text-4xl text-tm-red mb-4"></i><h3 class="font-bold text-white text-xl">Daños a la Unidad</h3></div>
+                        <div class="glass-panel p-8 border-t-4 border-tm-red"><i class="fa-solid fa-gavel text-4xl text-tm-red mb-4"></i><h3 class="font-bold text-white text-xl">Sanciones y Multas</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 7. EVIDENCIAS TECNOLÓGICAS -->
+            <section class="slide-module">
+                <div class="max-w-7xl w-full text-left">
+                    <span class="text-tm-cyan text-sm font-bold tracking-[0.2em] uppercase mb-2 block">Evidencia Forense</span>
+                    <h2 class="font-display text-5xl font-bold uppercase mb-10 text-white">Exceso de Velocidad</h2>
+                    <div class="flex flex-col lg:flex-row gap-12 items-center">
+                        <div class="w-full lg:w-1/2">
+                            <p class="text-xl text-slate-300 leading-relaxed font-light mb-8">La telemetría extraída muestra patrones inequívocos de prisa.</p>
+                            <div class="holo-panel danger-panel p-8"><h4 class="text-2xl font-bold text-white mb-2"><i class="fa-solid fa-gauge-high mr-2 text-tm-red"></i> Registro Samsara</h4><p class="text-slate-400 text-lg">Picos sostenidos de velocidad excedida.</p></div>
+                        </div>
+                        <div class="w-full lg:w-1/2 flex flex-col gap-6">
+                            <div class="glass-panel p-8"><h4 class="text-xl font-bold text-white mb-2"><i class="fa-solid fa-arrow-trend-up text-tm-amber mr-2"></i> Aceleración Brusca</h4></div>
+                            <div class="glass-panel p-8"><h4 class="text-xl font-bold text-white mb-2"><i class="fa-solid fa-clock text-tm-cyan mr-2"></i> Presión por Tiempo</h4></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 8. CAUSAS DEL EXCESO (INTERACCIÓN 4) -->
+            <section class="slide-module" data-type="poll" data-poll="Ante presiones logísticas por retraso, ¿De quién es la responsabilidad final de moderar la velocidad?" data-options="Del Despacho Logístico (No presionar)|0,Del Operador (Responsabilidad civil)|50,Del Instructor (Desarrollar Liderazgo al Volante)|100">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">Causas del Exceso</h2>
+                    <p class="text-xl text-slate-300 mb-10 max-w-4xl mx-auto font-light">Identifiquemos el origen. <strong class="text-tm-cyan">Voten en su App sobre la responsabilidad.</strong></p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-left mt-10">
+                        <div class="glass-panel p-8 border-l-4 border-slate-500"><h3 class="font-bold text-white text-lg">Tiempos Rígidos</h3></div>
+                        <div class="glass-panel p-8 border-l-4 border-slate-500"><h3 class="font-bold text-white text-lg">Presión Despacho</h3></div>
+                        <div class="glass-panel p-8 border-l-4 border-slate-500"><h3 class="font-bold text-white text-lg">Retrasos Viales</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 9. HASTA DÓNDE AFECTA -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-12 text-white">¿Hasta dónde afecta?</h2>
+                    <div class="flex gap-8 text-left max-w-5xl mx-auto">
+                        <div class="holo-panel p-10 flex-1 border-t-4 border-tm-cyan"><i class="fa-solid fa-building-circle-xmark text-5xl text-tm-cyan mb-6"></i><h4 class="text-2xl font-bold text-white mb-2">Reputación</h4></div>
+                        <div class="holo-panel p-10 flex-1 border-t-4 border-tm-amber"><i class="fa-solid fa-house-chimney-user text-5xl text-tm-amber mb-6"></i><h4 class="text-2xl font-bold text-white mb-2">Tragedia Familiar</h4></div>
+                        <div class="holo-panel p-10 flex-1 border-t-4 border-tm-red"><i class="fa-solid fa-earth-americas text-5xl text-tm-red mb-6"></i><h4 class="text-2xl font-bold text-white mb-2">Daño Social</h4></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 10. LÍNEA DE TIEMPO RETROSPECTIVA -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">Línea de Tiempo Retrospectiva</h2>
+                    <p class="text-2xl text-slate-300 font-light mb-12 max-w-4xl mx-auto leading-relaxed">
+                        Un accidente fatal no ocurre en el momento del impacto, <strong class="text-white font-bold">se siembra mucho antes.</strong> Vamos a recorrer el viaje del operador en 3D para ver <strong class="text-tm-red">exactamente dónde falló la instrucción.</strong>
+                    </p>
+                    <button onclick="iniciarRuta3D()" class="bg-tm-cyan text-black font-display text-2xl uppercase font-bold px-12 py-6 rounded-full shadow-neon-cyan hover:bg-white transition-colors">
+                        INICIAR RECORRIDO FORENSE <i class="fa-solid fa-route ml-3"></i>
+                    </button>
+                </div>
+            </section>
+
+            <!-- --- INICIA EL VIAJE DEL TRÁILER 3D EN EL CANVAS DE FONDO --- -->
+
+            <!-- 11. EL VIAJE COMIENZA (Activa Tráiler y Presupuesto) -->
+            <section class="slide-module">
+                <div class="glass-panel warning-panel max-w-4xl text-center p-16 border-t-8 border-tm-amber bg-black/60">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">El Viaje Comienza</h2>
+                    <p class="text-2xl text-slate-300 font-light">
+                        Sigan a la unidad 3D. El sistema tiene un fondo de <strong>$80,000</strong>. Veremos cómo las malas prácticas operativas lo drenan.
+                    </p>
+                </div>
+            </section>
+
+            <!-- 12. OMISIÓN DE INSPECCIÓN (BITÁCORA 1) -->
+            <section class="slide-module">
+                <div class="holo-panel danger-panel max-w-6xl text-center p-12 md:p-16">
+                    <h2 class="font-display text-4xl md:text-6xl font-bold uppercase mb-10 text-white"><i class="fa-solid fa-clipboard-list text-tm-red mr-6"></i> Omisión de Inspección</h2>
+                    <p class="text-xl md:text-3xl text-slate-300 leading-relaxed mb-12 font-light">El operador <strong class="text-white font-medium">omitió la inspección pre-viaje real.</strong></p>
+                    <div class="bg-black/40 p-6 rounded-2xl border-l-4 border-tm-red mb-14 flex items-center justify-between shadow-2xl">
+                        <div class="text-left"><p class="text-tm-red font-display font-bold text-2xl uppercase mb-2">Consecuencia:</p><p class="text-slate-300 text-2xl font-light">Llantas con presión baja circulando con carga.</p></div>
+                        <div class="text-6xl font-display font-black text-tm-red">-$5,000</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 13. HEMORRAGIA SILENCIOSA (INTERACCIÓN 5 + VIDEO TURBO) -->
+            <section class="slide-module" data-type="poll" data-poll="El daño al Turbo de $45,000 fue causado por:" data-options="Desgaste natural por kilometraje|0,Apagado súbito de motor sin rutina de enfriamiento|100,Mala calidad del diésel|0">
+                <div class="max-w-[95rem] w-full text-center">
+                    <h2 class="font-display text-4xl font-bold uppercase mb-8 text-white">La Hemorragia Silenciosa</h2>
+                    <p class="text-xl text-slate-300 mb-10 font-light">Omisiones que cuestan miles. <strong class="text-tm-cyan">Responde la evaluación en tu App.</strong></p>
+                    
+                    <div class="flex flex-col md:flex-row justify-center gap-8 max-w-6xl mx-auto">
+                        <div class="holo-panel danger-panel p-0 overflow-hidden flex flex-col">
+                            <div class="h-48 bg-slate-900 flex items-center justify-center border-b border-slate-700"><i class="fa-solid fa-tire text-7xl text-slate-700"></i></div>
+                            <div class="p-8 text-center flex-1"><h3 class="text-2xl font-bold text-white mb-2 uppercase">Llantas Bajas</h3><div class="text-4xl font-mono font-bold text-tm-red">-$8,000</div></div>
+                        </div>
+                        <div class="holo-panel danger-panel p-0 overflow-hidden flex flex-col">
+                            <!-- VIDEO TURBO -->
+                            <video src="turbo.mp4" autoplay loop muted playsinline class="w-full h-48 object-cover border-b border-slate-700"></video>
+                            <div class="p-8 text-center flex-1"><h3 class="text-2xl font-bold text-white mb-2 uppercase">Daño al Turbo</h3><div class="text-4xl font-mono font-bold text-tm-red">-$45,000</div></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 14. SALIDA APURADA -->
+            <section class="slide-module">
+                <div class="holo-panel danger-panel max-w-6xl text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-8 text-white">Salida Apurada</h2>
+                    <p class="text-2xl text-slate-300 leading-relaxed mb-10 font-light">Sale tarde. <strong class="text-white font-medium">Bajo presión, intenta recuperar el tiempo.</strong></p>
+                    <div class="bg-black/40 p-8 rounded-2xl border-l-4 border-tm-red flex items-center justify-between shadow-2xl">
+                        <div class="text-left"><p class="text-tm-red font-bold text-xl uppercase mb-2">Consecuencia:</p><p class="text-slate-300 text-xl font-light">Penalización de servicio por retraso.</p></div>
+                        <div class="text-6xl font-display font-black text-tm-red">-$8,000</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 15. DISTRACCIÓN CELULAR -->
+            <section class="slide-module">
+                <div class="holo-panel danger-panel max-w-6xl text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-8 text-white">Distracción Operativa</h2>
+                    <p class="text-2xl text-slate-300 leading-relaxed mb-10 font-light">Presionado, <strong class="text-white font-medium">usa el celular en ruta para avisar.</strong> Invade carril.</p>
+                    <div class="bg-black/40 p-8 rounded-2xl border-l-4 border-tm-red flex items-center justify-between shadow-2xl">
+                        <div class="text-left"><p class="text-tm-red font-bold text-xl uppercase mb-2">Consecuencia:</p><p class="text-slate-300 text-xl font-light">Infracción estatal y unidad retenida.</p></div>
+                        <div class="text-6xl font-display font-black text-tm-red">-$15,000</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 16. RETÉN FEDERAL -->
+            <section class="slide-module">
+                <div class="holo-panel danger-panel max-w-6xl text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-8 text-white">Retén Federal</h2>
+                    <p class="text-2xl text-slate-300 leading-relaxed mb-10 font-light">La unidad es detenida. <strong class="text-white font-medium">Circula sin cinturón y reacciona a la defensiva.</strong></p>
+                    <div class="bg-black/40 p-8 rounded-2xl border-l-4 border-tm-red flex items-center justify-between shadow-2xl">
+                        <div class="text-left"><p class="text-tm-red font-bold text-xl uppercase mb-2">Consecuencia:</p><p class="text-slate-300 text-xl font-light">Infracción federal y revisión exhaustiva.</p></div>
+                        <div class="text-6xl font-display font-black text-tm-red">-$3,000</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 17. EXCESO DE VELOCIDAD / DAÑO -->
+            <section class="slide-module">
+                <div class="holo-panel danger-panel max-w-6xl text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-8 text-white">Exceso de Velocidad</h2>
+                    <p class="text-2xl text-slate-300 leading-relaxed mb-10 font-light">Toma curva a exceso de velocidad. <strong class="text-white font-medium">Raspa severamente el remolque.</strong></p>
+                    <div class="bg-black/40 p-8 rounded-2xl border-l-4 border-tm-red flex items-center justify-between shadow-2xl">
+                        <div class="text-left"><p class="text-tm-red font-bold text-xl uppercase mb-2">Consecuencia:</p><p class="text-slate-300 text-xl font-light">Deducible de seguro urgente.</p></div>
+                        <div class="text-6xl font-display font-black text-tm-red">-$40,000</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 18. EL ACCIDENTE FINAL (VIDEO) -->
+            <section class="slide-module p-0">
+                <div class="w-full h-full bg-black flex items-center justify-center relative">
+                    <div class="absolute top-8 left-8 text-tm-red font-mono text-2xl font-bold animate-pulse z-20 bg-black/60 px-6 py-2 rounded-lg border border-tm-red">ALERTA DPF IGNORADA / COLAPSO TOTAL</div>
+                    <!-- VIDEO ACCIDENTE INYECTADO -->
+                    <video id="route-crash-video" src="accidente.mp4" class="w-full h-full object-cover opacity-80" controls preload="auto"></video>
+                </div>
+            </section>
+
+            <!-- 19. ORIGEN EN PATIO (VIDEO DEL CULPABLE - INTERACCIÓN 6) -->
+            <section class="slide-module p-0" data-type="reflection" data-poll="Basado en el video, ¿Cuál fue la falla instruccional que liberó al operador para tener el accidente?">
+                <div class="w-full h-full bg-black flex flex-col items-center justify-center relative">
+                    <div class="absolute top-8 left-8 text-tm-orange font-mono text-xl font-bold z-20 bg-black/80 px-6 py-2 rounded-lg border border-tm-orange">EL VERDADERO ORIGEN: PATIO</div>
+                    <!-- VIDEO PATIO INYECTADO -->
+                    <video src="crea_un_video_con_resolucion_c.mp4" class="w-full h-full object-cover opacity-90" controls preload="auto"></video>
+                    <div class="absolute bottom-12 text-center w-full z-20">
+                        <p class="text-white text-3xl font-bold bg-black/80 inline-block px-10 py-4 rounded-xl border-2 border-tm-orange text-tm-orange">El instructor validó al operador por prisa. <strong class="text-white">Explica su falla en tu App.</strong></p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 20. EXAMEN 1: LA FIRMA CIEGA (EXAMEN INSTRUCTOR) -->
+            <section class="slide-module" data-type="poll" data-poll="Evaluación de Instructor: Urge sacar la carga y el operador omite la inspección en patio. ¿Qué decides?" data-options="Firmar y Liberarlo con anotación en bitácora|0|Firma,Frenar Operación. Nadie sale sin protocolo|100|Frenar">
+                <div class="holo-panel control-panel max-w-7xl w-full text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase text-white mb-6"><i class="fa-solid fa-clipboard-question text-tm-orange mr-4"></i> Examen: La Firma Ciega</h2>
+                    <p class="text-2xl text-slate-300 font-light bg-black/40 p-8 rounded-2xl">
+                        Abran su App Móvil para dictaminar. <strong class="text-tm-red">Sus errores cuestan dinero a la empresa.</strong>
+                    </p>
+                </div>
+            </section>
+
+            <!-- 21. MEDICIÓN CONDUCTUAL -->
+            <section class="slide-module">
+                <div class="max-w-[95rem] w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-10 text-white">Medición Conductual</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                        <div class="holo-panel success-panel p-10"><h3 class="font-bold text-white text-2xl mb-4">Resiliencia</h3><p class="text-slate-300 text-lg font-light">Ajusta la maniobra ante corrección en vez de justificarse.</p></div>
+                        <div class="holo-panel success-panel p-10"><h3 class="font-bold text-white text-2xl mb-4">Integridad Oculta</h3><p class="text-slate-300 text-lg font-light">Ejecuta protocolos de seguridad sin supervisión directa.</p></div>
+                        <div class="holo-panel success-panel p-10"><h3 class="font-bold text-white text-2xl mb-4">Custodia Activos</h3><p class="text-slate-300 text-lg font-light">Trata el equipo de la empresa con respeto absoluto.</p></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 22. EL ROL EVALUAR -->
+            <section class="slide-module">
+                <div class="max-w-[90rem] w-full text-center">
+                    <h2 class="font-display text-6xl font-bold uppercase mb-16 text-tm-red drop-shadow-[0_0_30px_rgba(255,51,51,0.4)]">Rol: Evaluar</h2>
+                    <div class="flex gap-8 justify-center items-center">
+                        <div class="glass-panel p-10 flex-1"><h4 class="font-bold text-white text-2xl uppercase">Habilidad</h4></div>
+                        <i class="fa-solid fa-chevron-right text-5xl text-tm-red"></i>
+                        <div class="glass-panel p-10 flex-1"><h4 class="font-bold text-white text-2xl uppercase">Criterio</h4></div>
+                        <i class="fa-solid fa-chevron-right text-5xl text-tm-red"></i>
+                        <div class="bg-tm-red/20 p-10 border border-tm-red rounded-2xl flex-1"><h4 class="font-bold text-white text-2xl uppercase">Validación</h4></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 23. PERFIL PROFESIONAL -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-12 text-white">Perfil del Evaluador</h2>
+                    <div class="flex flex-col space-y-6 max-w-4xl mx-auto">
+                        <div class="glass-panel p-6 flex items-center gap-6 text-left"><i class="fa-solid fa-brain text-4xl text-tm-cyan w-12 text-center"></i><h4 class="font-bold text-white text-xl">Criterio Técnico (Telemetría)</h4></div>
+                        <div class="glass-panel p-6 flex items-center gap-6 text-left"><i class="fa-solid fa-gavel text-4xl text-tm-red w-12 text-center"></i><h4 class="font-bold text-white text-xl">Actitud de Firmeza</h4></div>
+                        <div class="glass-panel p-6 flex items-center gap-6 text-left"><i class="fa-solid fa-route text-4xl text-tm-amber w-12 text-center"></i><h4 class="font-bold text-white text-xl">Análisis Predictivo</h4></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 24. EL BUEN OPERADOR -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-12 text-white">El Buen Operador</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                        <div class="glass-panel p-10 border-t-4 border-tm-cyan"><i class="fa-solid fa-shield-halved text-4xl text-tm-cyan mb-4"></i><h3 class="font-bold text-white text-xl">Seguridad Defensiva</h3></div>
+                        <div class="glass-panel p-10 border-t-4 border-tm-lime"><i class="fa-solid fa-gas-pump text-4xl text-tm-lime mb-4"></i><h3 class="font-bold text-white text-xl">Eficiencia (Combustible)</h3></div>
+                        <div class="glass-panel p-10 border-t-4 border-tm-orange"><i class="fa-solid fa-list-check text-4xl text-tm-orange mb-4"></i><h3 class="font-bold text-white text-xl">Apego a Protocolos</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 25. EL FORO ABIERTO (INTERACCIÓN 7) -->
+            <section class="slide-module" data-type="reflection" data-poll="En tu experiencia clínica, ¿qué hábito invisible a la telemetría delata a un operador irresponsable?">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-10 text-white">Foro: El Buen Operador</h2>
+                    <p class="text-xl text-slate-300 font-light mb-12">Desde su experiencia clínica. <strong class="text-tm-cyan">Aporten su respuesta en la aplicación.</strong></p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                        <div class="glass-panel p-8"><h3 class="font-bold text-white text-xl mb-2">Compartir Casos</h3></div>
+                        <div class="glass-panel p-8"><h3 class="font-bold text-white text-xl mb-2">Puntos de Dolor</h3></div>
+                        <div class="glass-panel p-8"><h3 class="font-bold text-white text-xl mb-2">Enriquecer Malla</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 26. MENTORÍA CORRECTIVA -->
+            <section class="slide-module">
+                <div class="max-w-5xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-12 text-white">Mentoría Correctiva</h2>
+                    <div class="flex flex-col space-y-6 text-left">
+                        <div class="glass-panel p-6 flex items-center gap-6"><div class="bg-tm-amber/20 text-tm-amber font-bold w-12 h-12 flex items-center justify-center rounded-full text-xl">1</div><h4 class="font-bold text-white text-xl">Diagnóstico Crítico</h4></div>
+                        <div class="glass-panel p-6 flex items-center gap-6"><div class="bg-tm-amber/20 text-tm-amber font-bold w-12 h-12 flex items-center justify-center rounded-full text-xl">2</div><h4 class="font-bold text-white text-xl">Conversación Raíz</h4></div>
+                        <div class="glass-panel p-6 flex items-center gap-6"><div class="bg-tm-amber/20 text-tm-amber font-bold w-12 h-12 flex items-center justify-center rounded-full text-xl">3</div><h4 class="font-bold text-white text-xl">Modelado en Cabina</h4></div>
+                        <div class="glass-panel p-6 flex items-center gap-6"><div class="bg-tm-amber/20 text-tm-amber font-bold w-12 h-12 flex items-center justify-center rounded-full text-xl">4</div><h4 class="font-bold text-white text-xl">Seguimiento</h4></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 27. MULTIPLICAR EL VALOR -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-12 text-white">Multiplicar el Valor</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                        <div class="holo-panel success-panel p-10"><i class="fa-solid fa-arrow-trend-up text-5xl text-tm-lime mb-6"></i><h3 class="font-bold text-white text-2xl">Rentabilidad</h3></div>
+                        <div class="holo-panel success-panel p-10"><i class="fa-solid fa-house-chimney-user text-5xl text-tm-lime mb-6"></i><h3 class="font-bold text-white text-2xl">Estabilidad Familiar</h3></div>
+                        <div class="holo-panel success-panel p-10"><i class="fa-solid fa-earth-americas text-5xl text-tm-lime mb-6"></i><h3 class="font-bold text-white text-2xl">Bienestar Global</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 28. IMPACTO COLECTIVO -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-12 text-white">Impacto Colectivo</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                        <div class="glass-panel p-10 border-t-4 border-tm-cyan"><h3 class="font-bold text-white text-2xl mb-4">1. Blindaje Financiero</h3></div>
+                        <div class="glass-panel p-10 border-t-4 border-tm-cyan"><h3 class="font-bold text-white text-2xl mb-4">2. Sustento Seguro</h3></div>
+                        <div class="glass-panel p-10 border-t-4 border-tm-cyan"><h3 class="font-bold text-white text-2xl mb-4">3. Tranquilidad Mental</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 29. LIDERAZGO TRASCENDENCIA -->
+            <section class="slide-module">
+                <div class="max-w-6xl w-full text-center">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-12 text-white">Liderazgo de Trascendencia</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                        <div class="glass-panel p-10 border-t-4 border-tm-lime"><h3 class="font-bold text-tm-lime text-xl mb-4">1. Direccionamiento</h3></div>
+                        <div class="glass-panel p-10 border-t-4 border-tm-lime"><h3 class="font-bold text-tm-lime text-xl mb-4">2. Estabilidad de Hogares</h3></div>
+                        <div class="glass-panel p-10 border-t-4 border-tm-lime"><h3 class="font-bold text-tm-lime text-xl mb-4">3. Retorno Seguro</h3></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 30. DEMUESTRA LO APRENDIDO (INTERACCIÓN CLASE APP) -->
+            <section class="slide-module">
+                <div class="glass-panel max-w-5xl w-full text-center p-16 border-t-4 border-tm-cyan shadow-neon-cyan">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">¡Demuestra lo Aprendido!</h2>
+                    <p class="text-xl text-slate-300 mb-10 font-light">Abre tu aplicación móvil, ve a la pestaña "Mi Clase" y diseña una dinámica operativa de 4 pasos usando el método PIEL. Al enviarla, aparecerá en esta pantalla en vivo.</p>
+                    <i class="fa-solid fa-mobile-screen-button text-6xl text-tm-cyan animate-pulse drop-shadow-[0_0_20px_rgba(0,229,255,0.8)]"></i>
+                </div>
+            </section>
+
+            <!-- --- BLOQUE FINAL DE EXÁMENES (APP) --- -->
+
+            <!-- 31. EXAMEN 1: CELULAR -->
+            <section class="slide-module" data-type="poll" data-poll="El operador usa el celular al maniobrar en reversa frente a ti. ¿Cómo intervienes?" data-options="Llamarle la atención verbalmente|0|Advertencia,Alto total a la maniobra y penalización|100|Frenar">
+                <div class="holo-panel control-panel max-w-7xl w-full text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase text-white mb-6"><i class="fa-solid fa-clipboard-question text-tm-orange mr-4"></i> Examen Operativo 02</h2>
+                    <p class="text-2xl text-slate-300 mb-10 font-light">Distracción Operativa. <strong class="text-tm-orange">Responde en la App Móvil.</strong></p>
+                </div>
+            </section>
+
+            <!-- 32. EXAMEN 2: ACOMPAÑAMIENTO -->
+            <section class="slide-module" data-type="poll" data-poll="Vas acompañando al operador en su primer viaje. ¿Cuál es tu postura en cabina?" data-options="Supervisión pasiva para no ponerlo nervioso|0|Pasivo,Intervención activa y corrección en tiempo real|100|Activo">
+                <div class="holo-panel control-panel max-w-7xl w-full text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase text-white mb-6"><i class="fa-solid fa-clipboard-question text-tm-orange mr-4"></i> Examen Operativo 03</h2>
+                    <p class="text-2xl text-slate-300 mb-10 font-light">Postura de Acompañamiento. <strong class="text-tm-orange">Responde en la App Móvil.</strong></p>
+                </div>
+            </section>
+
+            <!-- 33. EXAMEN 3: ANDRAGOGÍA -->
+            <section class="slide-module" data-type="poll" data-poll="El operador apaga el motor sin purgar el GNC. Corrígelo con Andragogía:" data-options="Exigir que repita el proceso de apagado|0|Tradicional,Hacerle pensar en el daño térmico de las válvulas|100|Andragogia">
+                <div class="holo-panel cyan-panel max-w-7xl w-full text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase text-white mb-10"><i class="fa-solid fa-clipboard-question text-tm-cyan mr-4"></i> Examen Operativo 04</h2>
+                    <p class="text-2xl text-slate-300 font-light">Manejo de Andragogía. <strong class="text-tm-cyan">Responde en la App.</strong></p>
+                </div>
+            </section>
+
+            <!-- 34. EXAMEN 4: UDAT -->
+            <section class="slide-module" data-type="poll" data-poll="En el simulador, el operador con experiencia duda y va a chocar. ¿Cómo reaccionas?" data-options="Agarrar el volante por él para evitar el error|0|Fisica,Forzar la decisión y que viva la consecuencia|100|Liderar">
+                <div class="holo-panel control-panel max-w-7xl w-full text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase text-white mb-6"><i class="fa-solid fa-clipboard-question text-tm-orange mr-4"></i> Examen Operativo 05</h2>
+                    <p class="text-2xl text-slate-300 mb-10 font-light">UDAT y Presión. <strong class="text-tm-orange">Responde en la App.</strong></p>
+                </div>
+            </section>
+
+            <!-- 35. EXAMEN FINAL: ESTRÉS -->
+            <section class="slide-module" data-type="poll" data-poll="¿Qué estrategia obliga al adulto a aplicar Liderazgo frente a la fatiga?" data-options="Exponer artículos SCT por 40 min|0|Reglamento,Video de accidentes por microsueños|0|Video,Simular presión logística y obligarlo a rechazar el viaje|100|Simular">
+                <div class="holo-panel cyan-panel max-w-7xl w-full text-center p-16">
+                    <h2 class="font-display text-5xl font-bold uppercase text-white mb-10"><i class="fa-solid fa-clipboard-question text-tm-cyan mr-4"></i> Examen Final UDAT</h2>
+                    <p class="text-2xl text-slate-300 font-light">Tema: Horas de Conducción. <strong class="text-tm-cyan">Responde en la App.</strong></p>
+                </div>
+            </section>
+
+            <!-- 36. CREADOR DE AUDITORÍA (APLICACIÓN FINAL 60 PUNTOS) -->
+            <section class="slide-module">
+                <div class="glass-panel danger-panel max-w-6xl w-full text-center p-16 shadow-neon-red">
+                    <h2 class="font-display text-5xl font-bold uppercase mb-6 text-white">Auditoría Maestra (60 Puntos)</h2>
+                    <p class="text-2xl text-slate-300 mb-10 font-light leading-relaxed">
+                        En tu aplicación, entra a "Auditoría". Tienes el constructor para crear tu Matriz de 60 riesgos críticos en ruta y justificarlos.<br><strong class="text-tm-red">Al finalizar, oprime "Dictaminar" para proyectar tu pase a la prueba de patio.</strong>
+                    </p>
+                    <i class="fa-solid fa-list-check text-[6rem] text-tm-red animate-pulse"></i>
+                </div>
+            </section>
+
+            <!-- --- CIERRE FINAL --- -->
+
+            <!-- 37. CIERRE AUDITADO (El Tablero de Resultados) -->
+            <section class="slide-module" id="slide-tablero">
+                <div class="glass-panel danger-panel max-w-6xl w-full text-center p-12 overflow-y-auto max-h-[85vh]">
+                    <h2 class="font-display text-4xl font-bold uppercase mb-4 text-white">Cierre Auditado</h2>
+                    <p class="text-sm text-slate-400 mb-8">Veamos el impacto financiero del viaje vs la certificación de los instructores basada en la app.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-black/40 rounded-xl border border-white/10 p-6 text-center">
+                            <p class="text-tm-orange text-xs font-bold uppercase tracking-widest mb-2">Dictamen Grupal</p>
+                            <div class="text-4xl font-display font-black text-white"><span id="final-instructor-score">0</span> <span class="text-xl text-slate-500 font-normal">XP</span></div>
+                            <p id="final-instructor-msg" class="text-xs text-slate-400 mt-2">Métricas en vivo de los instructores.</p>
+                        </div>
+                        <div class="bg-black/40 rounded-xl border border-white/10 p-6 flex flex-col justify-center">
+                            <button id="btn-calcular" onclick="calcularUtilidad()" class="bg-tm-red text-white font-bold py-4 px-6 rounded-xl uppercase shadow-neon-red text-lg w-full hover:bg-red-700 transition-colors">Ejecutar Cierre Financiero</button>
+                            <div id="resultado-final" class="hidden mt-4 text-center">
+                                <p class="text-tm-red text-xs font-bold uppercase mb-1 tracking-widest">Balance de Operación</p>
+                                <p id="final-reveal-budget" class="font-display text-5xl font-black text-white drop-shadow-[0_0_15px_rgba(255,51,51,0.6)]">-$0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-black/60 rounded-xl border border-white/10 p-6 text-left">
+                        <div class="grid grid-cols-12 text-sm text-tm-cyan uppercase font-bold border-b border-white/10 pb-2 mb-3 tracking-widest">
+                            <div class="col-span-8">Costos Operativos (Ruta y Mala Instrucción)</div>
+                            <div class="col-span-4 text-right">Impacto</div>
+                        </div>
+                        <div class="space-y-3 text-lg text-slate-200 font-light" id="tabla-costos"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 38. EL ESPEJO DE LA REALIDAD -->
+            <section class="slide-module">
+                <div class="max-w-[90rem] w-full text-center relative">
+                    <i class="fa-solid fa-money-bill-transfer text-[8rem] md:text-[12rem] text-tm-red mb-12 opacity-20 drop-shadow-[0_0_30px_rgba(255,51,51,0.4)]"></i>
+                    <h2 class="font-display text-5xl md:text-7xl font-bold uppercase mb-12 text-white">El Espejo de la Realidad</h2>
+                    <p class="text-2xl md:text-4xl text-slate-300 leading-relaxed mb-16 font-light max-w-5xl mx-auto">
+                        "Una formación incompleta o una validación flexible en patio comprometen severamente a la organización y afectan el bienestar de todas las familias."
+                    </p>
+                </div>
+            </section>
+
+            <!-- 39. ACUERDO DE EXCELENCIA (Firma) -->
+            <section class="slide-module">
+                <div class="max-w-[85rem] w-full text-center">
+                    <h2 class="font-display text-5xl font-black uppercase mb-12 text-white">Control Maestro</h2>
+                    <div class="holo-panel success-panel p-16 group mt-12 relative">
+                        <h3 class="font-display text-4xl font-bold text-tm-lime mb-10 uppercase border-b border-white/10 pb-6">Acuerdo de Excelencia</h3>
+                        <p class="text-2xl md:text-4xl text-slate-300 font-light italic mb-12 leading-relaxed">
+                            "Asumo la responsabilidad de ser el filtro riguroso que resguarda la integridad de nuestros equipos operativos."
+                        </p>
+                        <button onclick="document.getElementById('firma-success').classList.remove('hidden'); document.body.style.background = 'radial-gradient(circle at 50% 50%, #0F172A 0%, #020617 100%)';" class="bg-tm-lime/20 text-tm-lime font-display font-bold py-6 px-16 rounded-2xl border-2 border-tm-lime uppercase tracking-widest hover:bg-tm-lime hover:text-black transition-all shadow-neon-lime text-2xl">
+                            AUTORIZAR Y CERTIFICAR
+                        </button>
+                        <div id="firma-success" class="hidden mt-10 text-tm-lime font-display font-black tracking-widest uppercase animate-pulse text-3xl drop-shadow-[0_0_20px_rgba(57,255,20,0.8)]">
+                            <i class="fa-solid fa-check-double mr-4"></i> PROTOCOLO DE ESTRATEGA ACTIVADO
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // --- 0. CONTROL DE MODOS ---
+        function initMode(mode) {
+            document.getElementById('mode-selector').style.display = 'none';
+            if(mode === 'master') { document.getElementById('master-mode').style.display = 'block'; updateSlides(); init3DTruck(); }
+            if(mode === 'app') { document.getElementById('app-mode').style.display = 'flex'; }
+        }
+
+        // ==========================================
+        //  LÓGICA DEL MODO APP MÓVIL
+        // ==========================================
+        const syncChannel = new BroadcastChannel('tm_forensic_sync');
+        let userName = ""; let currentScore = 0; let questionStartTime = 0;
+        let currentRiskLvl = ""; let auditItems = []; let riskStats = { critico: 0, medio: 0, bajo: 0 };
+
+        function appConectar() {
+            const input = document.getElementById('instructor-name').value;
+            if(input.trim().length < 2) return alert("Ingresa tu nombre");
+            userName = input.toUpperCase();
+            document.getElementById('app-status').innerText = "ONLINE";
+            document.getElementById('app-status').classList.replace('text-tm-red', 'text-tm-lime');
+            document.getElementById('app-nav').classList.remove('hidden');
+            appSwitchView('view-live', document.querySelector('.nav-btn-app'));
+            syncChannel.postMessage({ action: "STUDENT_JOIN", name: userName });
+            appToast("Conexión Establecida");
+        }
+
+        function appSwitchView(viewId, btnElement) {
+            document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            document.querySelectorAll('.nav-btn-app').forEach(b => b.classList.remove('active'));
+            if(btnElement) btnElement.classList.add('active');
+        }
+
+        function appToast(msg) {
+            const t = document.getElementById('toast'); t.innerHTML = `<i class="fa-solid fa-check-double mr-2"></i> ${msg}`;
+            t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        // Escuchar maestro
+        syncChannel.addEventListener('message', (e) => {
+            const data = e.data;
+            if(document.getElementById('app-mode').style.display === 'flex') {
+                if(data.action === "SYNC_QUESTION") {
+                    document.getElementById('waiting-screen').classList.add('hidden');
+                    document.getElementById('interaction-screen').classList.remove('hidden');
+                    document.getElementById('interaction-question').innerText = data.question;
+                    document.getElementById('interaction-feedback').classList.add('hidden');
+                    
+                    const container = document.getElementById('interaction-content'); container.innerHTML = '';
+                    questionStartTime = Date.now();
+                    
+                    if(data.type === "poll") {
+                        document.getElementById('interaction-type').innerHTML = `<i class="fa-solid fa-bolt mr-2"></i> Evaluación Rápida`;
+                        data.options.forEach(opt => {
+                            const btn = document.createElement('button');
+                            btn.className = "w-full glass p-5 text-left text-sm font-bold text-white hover:border-tm-cyan focus:border-tm-cyan focus:bg-tm-cyan/20 transition-all border border-transparent";
+                            btn.innerHTML = `<i class="fa-solid fa-angle-right text-tm-cyan mr-3"></i> ${opt.text}`;
+                            btn.onclick = () => appEnviarRespuesta(data.slideId, opt, btn);
+                            container.appendChild(btn);
+                        });
+                    } else if (data.type === "reflection") {
+                        document.getElementById('interaction-type').innerHTML = `<i class="fa-solid fa-pen-clip mr-2"></i> Reflexión Abierta`;
+                        container.innerHTML = `
+                            <textarea id="ref-input" rows="4" class="input-tm" placeholder="Tu análisis pericial..."></textarea>
+                            <button onclick="appEnviarReflexion(${data.slideId})" class="btn-tm">Enviar Análisis</button>
+                        `;
+                    }
+                } else if (data.action === "CLEAR_QUESTION") {
+                    document.getElementById('waiting-screen').classList.remove('hidden');
+                    document.getElementById('interaction-screen').classList.add('hidden');
+                }
+            }
+        });
+
+        function appEnviarRespuesta(slideId, optionData, btnElement) {
+            const responseTime = (Date.now() - questionStartTime) / 1000;
+            const btns = document.getElementById('interaction-content').querySelectorAll('button');
+            btns.forEach(b => { b.disabled = true; b.classList.add('opacity-50'); });
+            btnElement.classList.remove('opacity-50'); btnElement.classList.add('bg-tm-cyan/20', 'border-tm-cyan');
+            currentScore += optionData.points; document.getElementById('user-score').innerText = currentScore;
+            
+            const fb = document.getElementById('interaction-feedback'); fb.classList.remove('hidden');
+            fb.innerText = optionData.points > 0 ? "Correcto. Evaluación registrada." : "Incorrecto. Se aplicará sanción financiera al tablero central.";
+            if(optionData.points === 0) { fb.classList.replace('text-tm-lime', 'text-tm-red'); fb.classList.replace('bg-tm-lime/20', 'bg-tm-red/20'); fb.classList.replace('border-tm-lime', 'border-tm-red'); }
+            
+            syncChannel.postMessage({ action: "STUDENT_ANSWER", name: userName, points: optionData.points, isCorrect: optionData.isCorrect, time: responseTime, concept: optionData.concept });
+            appToast(optionData.points > 0 ? `+${optionData.points} XP` : "Evaluado con Error");
+        }
+
+        function appEnviarReflexion(slideId) {
+            const text = document.getElementById('ref-input').value;
+            if(text.trim().length < 5) return alert("Escribe un análisis completo.");
+            currentScore += 50; document.getElementById('user-score').innerText = currentScore;
+            document.getElementById('interaction-feedback').classList.remove('hidden');
+            document.getElementById('interaction-feedback').innerText = "Análisis enviado a la pantalla maestra.";
+            document.getElementById('ref-input').disabled = true;
+            syncChannel.postMessage({ action: "STUDENT_REFLECTION", name: userName, text: text, points: 50 });
+            appToast("+50 XP (Análisis)");
+        }
+
+        function appEnviarClase() {
+            if(!userName) return alert("Vincúlate en 'En Vivo' primero.");
+            const cd = { title: document.getElementById('class-title').value || "Módulo Táctico", p: document.getElementById('class-p').value || "...", i: document.getElementById('class-i').value || "...", e: document.getElementById('class-e').value || "...", l: document.getElementById('class-l').value || "..." };
+            syncChannel.postMessage({ action: "PROYECTAR_CLASE", name: userName, data: cd }); appToast("Clase Transmitida");
+        }
+
+        function appSetRiskLvl(lvl, btn) { currentRiskLvl = lvl; document.querySelectorAll('.risk-btn').forEach(b => b.classList.replace('bg-slate-700', 'bg-slate-800')); btn.classList.replace('bg-slate-800', 'bg-slate-700'); }
+        function appAgregarRiesgo() {
+            const rName = document.getElementById('risk-name').value; const rJust = document.getElementById('risk-justification').value;
+            if(rName.length < 3 || rJust.length < 3 || !currentRiskLvl) return alert("Completa todos los campos.");
+            auditItems.push({ name: rName, just: rJust, lvl: currentRiskLvl }); document.getElementById('audit-count').innerText = auditItems.length;
+            if(currentRiskLvl === 'Crítico') riskStats.critico++; if(currentRiskLvl === 'Medio') riskStats.medio++; if(currentRiskLvl === 'Bajo') riskStats.bajo++;
+            const div = document.createElement('div'); const color = currentRiskLvl === 'Crítico' ? 'text-tm-red border-tm-red' : (currentRiskLvl === 'Medio' ? 'text-tm-amber border-tm-amber' : 'text-tm-lime border-tm-lime');
+            div.className = `glass p-3 border-l-4 ${color}`; div.innerHTML = `<div class="flex justify-between"><h4 class="font-bold text-white text-xs">${auditItems.length}. ${rName}</h4></div><p class="text-[0.65rem] text-slate-400 mt-1 italic">${rJust}</p>`;
+            document.getElementById('risk-list').prepend(div);
+            document.getElementById('risk-name').value = ""; document.getElementById('risk-justification').value = ""; currentRiskLvl = "";
+            document.querySelectorAll('.risk-btn').forEach(b => b.classList.replace('bg-slate-700', 'bg-slate-800'));
+        }
+        function appEnviarAuditoria() {
+            if(!userName) return alert("Vincúlate en 'En Vivo' primero.");
+            if(auditItems.length < 60) { const conf = confirm(`Tienes ${auditItems.length}/60 incisos. Se requiere la matriz completa. ¿Enviar reporte parcial?`); if(!conf) return; }
+            syncChannel.postMessage({ action: "STUDENT_AUDIT", name: userName, total: auditItems.length, stats: riskStats }); appToast("Dictamen Enviado");
+        }
+
+
+        // ==========================================
+        //  LÓGICA DEL MODO PANTALLA MAESTRA
+        // ==========================================
+        let connectedStudents = {}; let globalScore = 0;
+        const valorViajeBase = 80000; let presupuestoActual = valorViajeBase; 
+        let costoMalaInstruccion = 0; // NUEVO: Acumula el costo de los errores del instructor
+        let registroMermas = []; let isTruckDriving = false;
+
+        function toggleTeacherPanel() { document.getElementById('teacher-dashboard').classList.toggle('open'); }
+
+        function updateTeacherPanel() {
+            const list = document.getElementById('students-list');
+            if(Object.keys(connectedStudents).length > 0) document.getElementById('empty-students').style.display = 'none';
+            list.innerHTML = '';
+            for (let id in connectedStudents) {
+                const s = connectedStudents[id]; const isRisk = s.errors > 1;
+                const card = document.createElement('div'); card.className = `student-card ${isRisk ? 'risk' : ''}`;
+                card.innerHTML = `<div class="flex justify-between mb-2"><strong class="text-white text-sm">${s.name}</strong><span class="text-tm-cyan">${s.score} XP</span></div><div class="flex justify-between text-xs text-slate-400"><span>Fallas: <span class="${isRisk?'text-tm-red font-bold':''}">${s.errors}</span></span><span>Time: ${s.avgTime.toFixed(1)}s</span></div>`;
+                list.appendChild(card);
+            }
+        }
+
+        function notifyApp(slideIndex, slideElement) {
+            const pollQ = slideElement.getAttribute('data-poll'); 
+            const pollOpts = slideElement.getAttribute('data-options');
+            const pollType = slideElement.getAttribute('data-type'); // "poll" o "reflection"
+            
+            if(pollQ) {
+                let options = [];
+                if(pollOpts) {
+                    options = pollOpts.split(',').map(opt => { const p = opt.split('|'); return { text: p[0], points: parseInt(p[1]), concept: p[2], isCorrect: parseInt(p[1]) > 0 }; });
+                }
+                syncChannel.postMessage({ action: "SYNC_QUESTION", slideId: slideIndex, type: pollType || 'poll', question: pollQ, options: options });
+            } else { 
+                syncChannel.postMessage({ action: "CLEAR_QUESTION" }); 
+            }
+        }
+
+        syncChannel.addEventListener('message', (e) => {
+            const data = e.data;
+            if(document.getElementById('master-mode').style.display === 'block') {
+                if(data.action === "STUDENT_JOIN") { if(!connectedStudents[data.name]) { connectedStudents[data.name] = { name: data.name, score: 0, errors: 0, times: [], avgTime: 0 }; updateTeacherPanel(); } }
+                if(data.action === "STUDENT_ANSWER") {
+                    if(connectedStudents[data.name]) {
+                        const s = connectedStudents[data.name]; s.score += data.points; 
+                        if(!data.isCorrect) {
+                            s.errors++; 
+                            // NUEVA MECÁNICA: Un error del instructor cuesta $15,000
+                            costoMalaInstruccion += 15000;
+                            document.getElementById('instructor-cost').innerText = `-$${costoMalaInstruccion.toLocaleString()}`;
+                            document.getElementById('hud-container-left').classList.add('visible');
+                            
+                            // Visual penalty
+                            animarAlertaFlotante(`-$15,000 (Error de Instrucción)`, true);
+                            document.body.classList.add('screen-shake'); setTimeout(() => document.body.classList.remove('screen-shake'), 400);
+                        } else {
+                            animarAlertaFlotante(`+${data.points} XP`, false);
+                        }
+                        
+                        s.times.push(data.time); s.avgTime = s.times.reduce((a,b)=>a+b,0)/s.times.length; globalScore += data.points; updateTeacherPanel();
+                    }
+                }
+                if(data.action === "STUDENT_REFLECTION") {
+                    if(connectedStudents[data.name]) {
+                        connectedStudents[data.name].score += data.points; globalScore += data.points; updateTeacherPanel();
+                        document.getElementById('ref-text').innerText = `"${data.text}"`;
+                        document.getElementById('ref-author').innerText = `- ${data.name}`;
+                        document.getElementById('reflection-overlay').classList.add('show');
+                        animarAlertaFlotante(`+${data.points} XP`, false);
+                    }
+                }
+                if(data.action === "PROYECTAR_CLASE") {
+                    document.getElementById('live-title').innerText = data.data.title; document.getElementById('live-author').innerText = `Instructor: ${data.name.toUpperCase()}`;
+                    document.getElementById('live-p').innerText = data.data.p; document.getElementById('live-i').innerText = data.data.i; document.getElementById('live-e').innerText = data.data.e; document.getElementById('live-l').innerText = data.data.l;
+                    document.getElementById('app-live-overlay').classList.add('show');
+                }
+                if(data.action === "STUDENT_AUDIT") {
+                    document.getElementById('eval-author').innerText = `Dictamen de: ${data.name.toUpperCase()}`;
+                    document.getElementById('eval-criticos').innerText = data.stats.critico || 0; document.getElementById('eval-medios').innerText = data.stats.medio || 0; document.getElementById('eval-ok').innerText = data.stats.bajo || 0;
+                    document.getElementById('eval-overlay').classList.add('show');
+                }
+            }
+        });
+
+        function animarAlertaFlotante(text, isNegative) {
+            const element = document.createElement('div'); element.classList.add('floating-alert'); 
+            element.style.color = isNegative ? '#FF3333' : '#39FF14'; element.innerText = text;
+            element.style.left = `50%`; element.style.top = `80%`; element.style.transform = "translateX(-50%)";
+            document.body.appendChild(element); setTimeout(() => element.remove(), 2500);
+        }
+
+        // NAVEGACIÓN MAESTRA
+        let currentSlide = 0; const slides = document.querySelectorAll('.slide-module'); const slideCounter = document.getElementById('slide-counter'); const progressBar = document.getElementById('progress-bar');
+        
+        function updateSlides() {
+            slides.forEach((slide, index) => {
+                slide.classList.remove('active', 'prev'); slide.scrollTop = 0; 
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                    if (slide.id === 'slide-tablero') renderizarTablaFinal(); 
+                    
+                    // Activar Video Automático del choque final en Ruta
+                    if (index === 17) { const vid = document.getElementById('route-crash-video'); if(vid) vid.play().catch(e=>console.log(e)); }
+                    
+                    // Mostrar Presupuesto Ruta solo cuando empiece el viaje (Slide 10 en adelante)
+                    if (index >= 10 && index <= 17) document.getElementById('hud-container-right').classList.add('visible');
+                    else document.getElementById('hud-container-right').classList.remove('visible');
+
+                    notifyApp(index, slide);
+                } else if (index < currentSlide) { slide.classList.add('prev'); }
+            });
+            slideCounter.innerText = `${currentSlide + 1} / ${slides.length}`; progressBar.style.width = `${((currentSlide + 1) / slides.length) * 100}%`;
+            actualizarRutaCamion();
+        }
+
+        function nextSlide() { if (currentSlide < slides.length - 1) { currentSlide++; updateSlides(); } }
+        function prevSlide() { if (currentSlide > 0) { currentSlide--; updateSlides(); } }
+        document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ') nextSlide(); if (e.key === 'ArrowLeft') prevSlide(); });
+
+        // FINANZAS Y GASTOS (Deducción en Viaje)
+        function actualizarHUDPresupuesto() { 
+            const val = (presupuestoActual<0?'-$':'$')+Math.abs(presupuestoActual).toLocaleString(); 
+            document.getElementById('global-budget').innerText = val; 
+        }
+
+        function registrarEventoViaje(btn, titulo, impacto, costo) {
+            if(btn.disabled) return; btn.disabled = true; btn.innerHTML = `CARGO REGISTRADO (-$${costo.toLocaleString()})`;
+            btn.classList.add('bg-slate-800'); btn.classList.remove('bg-tm-red', 'shadow-neon-red');
+            registroMermas.push({ desc: titulo, impacto: impacto, costo: costo }); 
+            presupuestoActual -= costo; 
+            actualizarHUDPresupuesto();
+            
+            document.body.classList.add('screen-shake'); setTimeout(() => document.body.classList.remove('screen-shake'), 400);
+        }
+
+        function renderizarTablaFinal() {
+            const table = document.getElementById('tabla-costos'); table.innerHTML = '';
+            
+            // Agregar las mermas de ruta
+            registroMermas.forEach((merma, idx) => { 
+                setTimeout(() => { const row = document.createElement('div'); row.className = `grid grid-cols-12 border-b border-white/10 pb-3 opacity-0 transition-opacity duration-300 mt-3`; row.innerHTML = `<div class="col-span-8"><strong class="text-white block text-lg">${merma.desc}</strong><span class="text-xs text-slate-400 uppercase">${merma.impacto}</span></div><div class="col-span-4 text-right text-tm-red font-mono font-bold text-xl">-$${merma.costo.toLocaleString()}</div>`; table.appendChild(row); setTimeout(() => row.classList.remove('opacity-0'), 50); }, idx * 200); 
+            });
+
+            // Agregar el costo por mala instrucción (errores en app)
+            if(costoMalaInstruccion > 0) {
+                setTimeout(() => { const row = document.createElement('div'); row.className = `grid grid-cols-12 border-b border-tm-red/50 bg-tm-red/10 p-2 rounded opacity-0 transition-opacity duration-300 mt-3`; row.innerHTML = `<div class="col-span-8"><strong class="text-tm-red block text-lg">Penalización Corporativa</strong><span class="text-xs text-tm-red uppercase">Errores de Instrucción en Evaluación</span></div><div class="col-span-4 text-right text-tm-red font-mono font-bold text-xl">-$${costoMalaInstruccion.toLocaleString()}</div>`; table.appendChild(row); setTimeout(() => row.classList.remove('opacity-0'), 50); }, registroMermas.length * 200);
+            }
+
+            document.getElementById('final-instructor-score').innerText = globalScore; 
+            document.getElementById('final-instructor-msg').innerText = globalScore > 200 ? "AUDITORÍA COMPLETADA" : "SE REQUIERE RE-ENTRENAMIENTO";
+        }
+
+        function calcularUtilidad() {
+            document.getElementById('btn-calcular').classList.add('hidden'); document.getElementById('resultado-final').classList.remove('hidden');
+            const finalEl = document.getElementById('final-reveal-budget'); 
+            let currentDisplay = valorViajeBase; 
+            const targetBudget = presupuestoActual - costoMalaInstruccion; // SUMA DE RUTA Y ERRORES DOCENTES
+            const stepValue = (currentDisplay - targetBudget) / 40; let counter = 0;
+            const timer = setInterval(() => { 
+                counter++; currentDisplay -= stepValue; 
+                if (counter >= 40) { 
+                    currentDisplay = targetBudget; clearInterval(timer); 
+                    finalEl.innerText = (currentDisplay < 0 ? '-$' : '$') + Math.abs(Math.round(currentDisplay)).toLocaleString(); 
+                    if(currentDisplay < 0) { finalEl.classList.add('text-tm-red'); document.body.classList.add('screen-shake'); setTimeout(() => document.body.classList.remove('screen-shake'), 600); } 
+                } else finalEl.innerText = (currentDisplay < 0 ? '-$' : '$') + Math.abs(Math.round(currentDisplay)).toLocaleString(); 
+            }, 40);
+        }
+
+        function firmarContrato() {
+            const btn = document.getElementById('btn-firmar'); btn.querySelector('.id-bg-btn').classList.remove('translate-y-full'); document.getElementById('btn-text').classList.replace('text-white', 'text-black'); btn.querySelector('.id-icon-btn').classList.replace('text-slate-400', 'text-black'); setTimeout(() => { document.getElementById('firma-success').classList.remove('hidden'); }, 400);
+        }
+
+        // MOTOR 3D Y RUTAS (Holográfico y Dinámico)
+        let scene, camera, renderer, particlesMesh, particlesGeometry, posArray, colorsArray;
+        let truckScene, truckCamera, truckRenderer, truckGroup; let targetTruckRotationY = 0;
+
+        function init3DTruck() {
+            const container = document.getElementById('mini-truck-canvas'); container.innerHTML = ''; 
+            truckScene = new THREE.Scene(); truckCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100); truckCamera.position.set(0, 8, 12); truckCamera.lookAt(0, 0, 0);
+            truckRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true }); truckRenderer.setSize(250, 250); container.appendChild(truckRenderer.domElement);
+            truckGroup = new THREE.Group();
+            
+            // Truck Wireframe Gemelo Digital
+            const createWireBox = (w,h,d, y, z) => { const geo = new THREE.BoxGeometry(w, h, d); const edges = new THREE.EdgesGeometry(geo); const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00E5FF, linewidth: 2 })); line.position.set(0, y, z); truckGroup.add(line); const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x00E5FF, transparent: true, opacity: 0.1 })); mesh.position.set(0, y, z); truckGroup.add(mesh); };
+            createWireBox(2, 2, 2.5, 1.2, 1.5); createWireBox(2.2, 2.8, 5.5, 1.6, -2.5);
+            truckGroup.scale.set(0.6, 0.6, 0.6); truckScene.add(truckGroup); window.isTruckReady = true;
+        }
+
+        try {
+            scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000); renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true }); renderer.setSize(window.innerWidth, window.innerHeight); document.getElementById('canvas-container').appendChild(renderer.domElement);
+            particlesGeometry = new THREE.BufferGeometry(); posArray = new Float32Array(5000 * 3); colorsArray = new Float32Array(5000 * 3);
+            for(let i = 0; i < 15000; i++) { posArray[i] = (Math.random() - 0.5) * 30; colorsArray[i] = Math.random(); }
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3)); particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+            particlesMesh = new THREE.Points(particlesGeometry, new THREE.PointsMaterial({ size: 0.03, vertexColors: true, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending }));
+            scene.add(particlesMesh); camera.position.z = 5; animate3D();
+        } catch(e) {}
+
+        function animate3D() {
+            requestAnimationFrame(animate3D); if(particlesMesh) particlesMesh.rotation.z += 0.001;
+            if(particlesGeometry) { const positions = particlesGeometry.attributes.position.array; for(let i = 2; i < 15000; i+=3) { positions[i] += 0.02; if(positions[i] > 5) positions[i] = -25; } particlesGeometry.attributes.position.needsUpdate = true; }
+            if(renderer && scene && camera) renderer.render(scene, camera); if(window.isTruckReady) renderTruck();
+        }
+
+        function renderTruck() {
+            if(!truckGroup) return;
+            if(isTruckDriving) { truckGroup.position.y = (Math.random() - 0.5) * 0.1; } else { truckGroup.position.y = 0; }
+            truckGroup.rotation.y += (((Math.PI / 2) - targetTruckRotationY) - truckGroup.rotation.y) * 0.1;
+            const color = (currentSlide >= 13 && currentSlide <= 17) ? 0xFF3333 : 0x00E5FF;
+            for(let i=0; i<4; i++) { truckGroup.children[i].material.color.setHex(color); }
+            truckRenderer.render(truckScene, truckCamera);
+        }
+
+        function iniciarRuta3D() {
+            nextSlide();
+        }
+
+        function getTruckPosition(slideIdx) {
+            const svgPath = document.getElementById('road-bg'); if(!svgPath) return null;
+            const startSlide = 10; const endSlide = 17;
+            if (slideIdx < startSlide || slideIdx > endSlide) return null;
+            const totalLen = svgPath.getTotalLength(); let percentage = (slideIdx - startSlide) / (endSlide - startSlide); percentage = Math.max(0, Math.min(1, percentage));
+            const pt = svgPath.getPointAtLength(totalLen * percentage);
+            let aheadPoint = pt; if (percentage < 0.99) aheadPoint = svgPath.getPointAtLength(totalLen * (percentage + 0.01));
+            let angle = Math.atan2((aheadPoint.y - pt.y) * window.innerHeight / 100, (aheadPoint.x - pt.x) * window.innerWidth / 100);
+            return { x: pt.x, y: pt.y, r: angle, p: percentage * totalLen };
+        }
+
+        function actualizarRutaCamion() {
+            const svgPath = document.getElementById('road-bg'); const truckAvatar = document.getElementById('truck-avatar');
+            if (currentSlide >= 10 && currentSlide <= 17 && svgPath) {
+                document.getElementById('roadmap-layer').classList.add('visible'); truckAvatar.classList.add('visible');
+                const totalLen = svgPath.getTotalLength(); let percentage = (currentSlide - 10) / 7; percentage = Math.max(0, Math.min(1, percentage));
+                const pt = svgPath.getPointAtLength(totalLen * percentage);
+                truckAvatar.style.left = `${pt.x}vw`; truckAvatar.style.top = `${pt.y}vh`;
+                let aheadPoint = percentage < 0.99 ? svgPath.getPointAtLength(totalLen * (percentage + 0.01)) : pt;
+                targetTruckRotationY = Math.atan2((aheadPoint.y - pt.y) * window.innerHeight / 100, (aheadPoint.x - pt.x) * window.innerWidth / 100);
+                document.getElementById('road-active').style.strokeDasharray = totalLen; document.getElementById('road-active').style.strokeDashoffset = totalLen - (percentage * totalLen);
+                isTruckDriving = true; setTimeout(() => isTruckDriving = false, 1500);
+            } else { document.getElementById('roadmap-layer')?.classList.remove('visible'); truckAvatar?.classList.remove('visible'); }
+        }
+
+    </script>
+</body>
+</html>
